@@ -184,7 +184,8 @@ if run:
         st.subheader("Price & Moving Averages")
         plot_df = df_all.tail(200)
         plt.figure(figsize=(10,5))
-        plt.plot(plot_df["Date"], plot_df[close_col], label="Close")
+        date_col = "Date" if "Date" in plot_df.columns else plot_df.index
+        plt.plot(date_col, plot_df[close_col], label="Close")
         plt.plot(plot_df["Date"], plot_df["ma_5"], label="MA 5")
         plt.plot(plot_df["Date"], plot_df["ma_10"], label="MA 10")
         plt.legend()
