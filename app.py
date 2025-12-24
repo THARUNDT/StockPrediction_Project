@@ -10,6 +10,8 @@ import numpy as np
 import yfinance as yf
 import joblib
 import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix, f1_score, roc_auc_score
+import seaborn as sns
 
 from dotenv import load_dotenv
 from newsapi import NewsApiClient
@@ -93,12 +95,14 @@ def train_model(ticker, company_name, start_date, end_date):
     sentiment = fetch_news_sentiment(company_name)
 
     df = add_features(df)
-    df["sentiment"] = sentiment
+    df["global_news_sentiment"] = sentiment
+
 
     df["target"] = (df["Close"].shift(-1) > df["Close"]).astype(int)
     df.dropna(inplace=True)
 
-    features = ["ma_5", "ma_10", "return_1", "sentiment"]
+    features = ["ma_5", "ma_10", "return_1", "global_news_sentiment"]
+
     X = df[features]
     y = df["target"]
 
@@ -111,11 +115,15 @@ def train_model(ticker, company_name, start_date, end_date):
 
     y_pred = model.predict(X_test)
     acc = accuracy_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred)
+    auc = roc_auc_score(y_test, model.predict_proba(X_test)[:, 1])
+    cm = confusion_matrix(y_test, y_pred)
 
     model_path = f"models/{ticker}_model.pkl"
     joblib.dump(model, model_path)
 
-    return model, acc, sentiment, df, X_test, y_test, y_pred, model_path
+    return model, acc, f1, auc, cm, sentiment, df, X_test, y_test, y_pred, model_path
+
 
 # -----------------------
 # STREAMLIT UI
@@ -141,7 +149,7 @@ end_date = st.date_input("End Date", pd.to_datetime("2024-12-31"))
 if st.button("Train & Predict"):
     try:
         with st.spinner("Training model and analyzing sentiment..."):
-            model, acc, sentiment, df, X_test, y_test, y_pred, model_path = train_model(
+            model, acc, f1, auc, cm, sentiment, df, X_test, y_test, y_pred, model_path = train_model(
                 ticker, company_name, start_date, end_date
             )
 
@@ -149,11 +157,40 @@ if st.button("Train & Predict"):
 
         st.metric("Model Accuracy", f"{acc:.2f}")
         st.metric("News Sentiment", f"{sentiment:.3f}")
-
+        st.metric("Accuracy", f"{acc:.2f}")
+        st.metric("F1 Score", f"{f1:.2f}")
+        st.metric("ROC-AUC", f"{auc:.2f}")
         st.text("Classification Report")
         st.text(classification_report(y_test, y_pred))
+        st.subheader("Confusion Matrix")
 
-        latest = df[["ma_5", "ma_10", "return_1", "sentiment"]].iloc[-1].values.reshape(1, -1)
+        fig, ax = plt.subplots(figsize=(3.0, 2.4))
+
+        sns.heatmap(
+            cm,
+            annot=True,
+            fmt="d",
+            cmap="Blues",
+            cbar=False,
+            xticklabels=["Down", "Up"],
+            yticklabels=["Down", "Up"],
+            annot_kws={"size": 9},
+            ax=ax
+        )
+
+        ax.set_xlabel("Predicted", fontsize=9)
+        ax.set_ylabel("Actual", fontsize=9)
+        ax.set_title("Confusion Matrix", fontsize=10)
+
+        ax.tick_params(axis='both', labelsize=8)
+
+        st.pyplot(fig, width='content')
+
+        plt.close()
+
+
+
+        latest = df[["ma_5", "ma_10", "return_1", "global_news_sentiment"]].iloc[-1].values.reshape(1, -1)
         pred = model.predict(latest)[0]
         prob = model.predict_proba(latest)[0]
 
