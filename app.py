@@ -1,4 +1,6 @@
-# app.py (FINAL – Streamlit Cloud Ready)
+# ============================
+# app.py
+# ============================
 
 import os
 import logging
@@ -6,120 +8,100 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
-import tweepy
-from textblob import TextBlob
 import joblib
 import matplotlib.pyplot as plt
+
+from dotenv import load_dotenv
+from newsapi import NewsApiClient
+from textblob import TextBlob
 
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
 
 # -----------------------
-# CONFIG
+# ENV SETUP
 # -----------------------
-os.makedirs("logs", exist_ok=True)
+load_dotenv()
+NEWS_API_KEY = os.environ.get("NEWS_API_KEY")
+
+st.set_page_config(page_title="Stock Prediction with Sentiment", layout="wide")
+st.title("📈 Stock Prediction using Market News Sentiment")
+
 os.makedirs("models", exist_ok=True)
-os.makedirs("data/processed", exist_ok=True)
+os.makedirs("logs", exist_ok=True)
 
 logging.basicConfig(
-    filename="logs/run.log",
+    filename="logs/app.log",
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-BEARER_TOKEN = os.environ.get("TWITTER_BEARER_TOKEN")
-
 # -----------------------
-# UTILITIES
+# NEWS SENTIMENT FUNCTION
 # -----------------------
-def normalize_columns(df):
-    df.columns = [str(c).strip().replace(" ", "_") for c in df.columns]
-    return df
-
-def detect_close_column(df):
-    for c in df.columns:
-        if "close" in c.lower():
-            return c
-    return None
-
-def ensure_features(df, close_col):
-    df = df.copy()
-    df["ma_5"] = df[close_col].rolling(5, min_periods=1).mean()
-    df["ma_10"] = df[close_col].rolling(10, min_periods=1).mean()
-    df["return_1"] = df[close_col].pct_change().fillna(0)
-    return df
-
-# -----------------------
-# TWITTER SENTIMENT (FIXED)
-# -----------------------
-def fetch_twitter_sentiment(bearer_token, ticker, max_results=50):
-    if not bearer_token:
+def fetch_news_sentiment(company_name):
+    if not NEWS_API_KEY:
+        st.warning("News API key not found. Sentiment set to 0.")
         return 0.0
 
     try:
-        client = tweepy.Client(bearer_token=bearer_token)
-
-        # SIMPLE QUERY (FREE TIER FRIENDLY)
-        query = ticker.split(".")[0]
-
-        tweets = client.search_recent_tweets(
-            query=query,
-            max_results=min(max_results, 100),
-            tweet_fields=["lang"]
+        newsapi = NewsApiClient(api_key=NEWS_API_KEY)
+        articles = newsapi.get_everything(
+            q=company_name,
+            language="en",
+            sort_by="relevancy",
+            page_size=20
         )
 
-        if not tweets or not tweets.data:
-            logging.info("No tweets returned")
-            return np.random.uniform(-0.05, 0.05)  # fallback
+        sentiments = []
+        for article in articles["articles"]:
+            text = (article["title"] or "") + " " + (article["description"] or "")
+            polarity = TextBlob(text).sentiment.polarity
+            sentiments.append(polarity)
 
-        sentiments = [
-            TextBlob(t.text).sentiment.polarity
-            for t in tweets.data
-            if t.lang == "en"
-        ]
+        return float(np.mean(sentiments)) if sentiments else 0.0
 
-        if not sentiments:
-            return np.random.uniform(-0.05, 0.05)
-
-        avg = float(np.mean(sentiments))
-        logging.info(f"Tweets: {len(sentiments)}, Sentiment: {avg:.4f}")
-        return avg
-
-    except Exception as e:
-        logging.exception("Twitter sentiment error")
-        return np.random.uniform(-0.05, 0.05)
+    except Exception:
+        logging.exception("News sentiment error")
+        return 0.0
 
 # -----------------------
-# DATA + FEATURES
+# FEATURE ENGINEERING
 # -----------------------
-def fetch_data_and_prepare(ticker, start, end):
-    raw = yf.download(ticker, start=start, end=end, progress=False)
-    if raw.empty:
-        raise RuntimeError("No price data")
+def add_features(df):
+    df["ma_5"] = df["Close"].rolling(5).mean()
+    df["ma_10"] = df["Close"].rolling(10).mean()
+    df["return_1"] = df["Close"].pct_change()
+    return df
 
-    df = raw.reset_index()
-    df = normalize_columns(df)
-    close_col = detect_close_column(df)
+# -----------------------
+# TRAINING PIPELINE
+# -----------------------
+def train_model(ticker, company_name, start_date, end_date):
 
-    if not close_col:
-        raise RuntimeError("Close column not found")
+    df = yf.download(ticker, start=start_date, end=end_date)
+    if df.empty:
+        raise RuntimeError("No stock data found.")
 
-    return df, close_col
+    df.reset_index(inplace=True)
 
-def build_dataset(df, close_col, sentiment):
-    df = ensure_features(df, close_col)
+    # Ensure datetime
+    df["Date"] = pd.to_datetime(df["Date"])
+    df = df.sort_values("Date")
+
+    sentiment = fetch_news_sentiment(company_name)
+
+    df = add_features(df)
     df["sentiment"] = sentiment
-    df["target"] = (df[close_col].shift(-1) > df[close_col]).astype(int)
-    df = df.dropna().iloc[:-1]
+
+    df["target"] = (df["Close"].shift(-1) > df["Close"]).astype(int)
+    df.dropna(inplace=True)
 
     features = ["ma_5", "ma_10", "return_1", "sentiment"]
-    return df[features], df["target"], df
+    X = df[features]
+    y = df["target"]
 
-# -----------------------
-# MODEL
-# -----------------------
-def train_model(X, y):
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, shuffle=False
     )
@@ -130,70 +112,77 @@ def train_model(X, y):
     y_pred = model.predict(X_test)
     acc = accuracy_score(y_test, y_pred)
 
-    return model, acc, X_test, y_test, y_pred
+    model_path = f"models/{ticker}_model.pkl"
+    joblib.dump(model, model_path)
+
+    return model, acc, sentiment, df, X_test, y_test, y_pred, model_path
 
 # -----------------------
 # STREAMLIT UI
 # -----------------------
-st.set_page_config(page_title="Stock Prediction with Sentiment", layout="wide")
-st.title("📈 Stock Prediction with Twitter Sentiment")
+STOCKS = {
+    "AAPL": "Apple",
+    "MSFT": "Microsoft",
+    "GOOGL": "Google",
+    "AMZN": "Amazon",
+    "TSLA": "Tesla",
+    "RELIANCE.NS": "Reliance Industries",
+    "TCS.NS": "Tata Consultancy Services",
+    "INFY.NS": "Infosys",
+    "HDFCBANK.NS": "HDFC Bank"
+}
 
-STOCK_LIST = [
-    "AAPL","MSFT","GOOGL","AMZN","META","TSLA","NVDA",
-    "RELIANCE.NS","TCS.NS","INFY.NS","HDFCBANK.NS",
-    "ICICIBANK.NS","SBIN.NS","ITC.NS","LT.NS"
-]
+ticker = st.selectbox("Select Stock", list(STOCKS.keys()))
+company_name = STOCKS[ticker]
 
-ticker = st.selectbox("Select Stock", STOCK_LIST)
-start_date = st.date_input("Start Date", pd.to_datetime("2018-01-01"))
+start_date = st.date_input("Start Date", pd.to_datetime("2019-01-01"))
 end_date = st.date_input("End Date", pd.to_datetime("2024-12-31"))
-max_tweets = st.slider("Tweets for Sentiment", 10, 100, 50)
-run = st.button("Fetch Data & Train")
 
-if run:
+if st.button("Train & Predict"):
     try:
-        st.info("Fetching stock data...")
-        df, close_col = fetch_data_and_prepare(ticker, start_date, end_date)
+        with st.spinner("Training model and analyzing sentiment..."):
+            model, acc, sentiment, df, X_test, y_test, y_pred, model_path = train_model(
+                ticker, company_name, start_date, end_date
+            )
 
-        st.info("Fetching Twitter sentiment...")
-        sentiment = fetch_twitter_sentiment(BEARER_TOKEN, ticker, max_tweets)
+        st.success("Model trained successfully!")
 
-        st.success(f"Sentiment score: {sentiment:.4f}")
+        st.metric("Model Accuracy", f"{acc:.2f}")
+        st.metric("News Sentiment", f"{sentiment:.3f}")
 
-        X, y, df_all = build_dataset(df, close_col, sentiment)
-
-        st.info("Training model...")
-        model, acc, X_test, y_test, y_pred = train_model(X, y)
-
-        st.success(f"Accuracy: {acc:.3f}")
+        st.text("Classification Report")
         st.text(classification_report(y_test, y_pred))
 
-        # Save
-        joblib.dump(model, f"models/{ticker.replace('.','_')}_model.pkl")
-        df_all.to_csv(f"data/processed/{ticker.replace('.','_')}.csv", index=False)
-
-        # Prediction
-        latest = X.iloc[-1:].values
+        latest = df[["ma_5", "ma_10", "return_1", "sentiment"]].iloc[-1].values.reshape(1, -1)
         pred = model.predict(latest)[0]
+        prob = model.predict_proba(latest)[0]
+
         result = "📈 UP" if pred == 1 else "📉 DOWN"
 
-        st.subheader("Next Day Prediction")
-        st.write(result)
+        st.subheader("Next Trading Day Prediction")
+        st.write(f"Prediction: **{result}**")
+        st.write(f"Probability: {prob}")
 
-        # Plot
-        st.subheader("Price & Moving Averages")
-        plot_df = df_all.tail(200)
-        plt.figure(figsize=(10,5))
-        date_col = "Date" if "Date" in plot_df.columns else plot_df.index
-        plt.plot(date_col, plot_df[close_col], label="Close")
-        plt.plot(plot_df["Date"], plot_df["ma_5"], label="MA 5")
-        plt.plot(plot_df["Date"], plot_df["ma_10"], label="MA 10")
+        st.success(f"Model saved at `{model_path}`")
+
+        # -----------------------
+        # FIXED STOCK PRICE CHART
+        # -----------------------
+        st.subheader("Stock Price Chart")
+
+        plt.figure(figsize=(10, 4))
+        plt.plot(df["Date"], df["Close"], label="Close Price")
+        plt.plot(df["Date"], df["ma_5"], label="MA 5")
+        plt.plot(df["Date"], df["ma_10"], label="MA 10")
+        plt.xlabel("Date")
+        plt.ylabel("Price")
+        plt.title(f"{ticker} Closing Price")
         plt.legend()
+        plt.grid(True)
+
         st.pyplot(plt.gcf())
         plt.close()
 
-        st.balloons()
-
     except Exception as e:
         st.error(str(e))
-        logging.exception("App error")
+        logging.exception("Application error")
