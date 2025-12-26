@@ -129,15 +129,108 @@ def train_model(ticker, company_name, start_date, end_date):
 # STREAMLIT UI
 # -----------------------
 STOCKS = {
+
+    # ======================
+    # 🇺🇸 US STOCKS
+    # ======================
     "AAPL": "Apple",
     "MSFT": "Microsoft",
     "GOOGL": "Google",
+    "GOOG": "Google",
     "AMZN": "Amazon",
+    "META": "Meta Platforms",
     "TSLA": "Tesla",
+    "NVDA": "NVIDIA",
+    "NFLX": "Netflix",
+    "INTC": "Intel",
+    "AMD": "Advanced Micro Devices",
+    "ORCL": "Oracle",
+    "IBM": "IBM",
+    "ADBE": "Adobe",
+    "CSCO": "Cisco Systems",
+    "QCOM": "Qualcomm",
+    "AVGO": "Broadcom",
+    "CRM": "Salesforce",
+    "PYPL": "PayPal",
+    "UBER": "Uber",
+    "LYFT": "Lyft",
+    "BA": "Boeing",
+    "GE": "General Electric",
+    "JPM": "JPMorgan Chase",
+    "BAC": "Bank of America",
+    "WFC": "Wells Fargo",
+    "GS": "Goldman Sachs",
+    "MS": "Morgan Stanley",
+    "KO": "Coca-Cola",
+    "PEP": "PepsiCo",
+    "MCD": "McDonald's",
+    "NKE": "Nike",
+    "DIS": "Walt Disney",
+    "WMT": "Walmart",
+    "COST": "Costco",
+    "XOM": "Exxon Mobil",
+    "CVX": "Chevron",
+    "BP": "BP",
+    "PFE": "Pfizer",
+    "JNJ": "Johnson & Johnson",
+    "MRNA": "Moderna",
+    "ABBV": "AbbVie",
+
+    # ======================
+    # 🇮🇳 INDIAN STOCKS (NSE)
+    # ======================
     "RELIANCE.NS": "Reliance Industries",
     "TCS.NS": "Tata Consultancy Services",
     "INFY.NS": "Infosys",
-    "HDFCBANK.NS": "HDFC Bank"
+    "WIPRO.NS": "Wipro",
+
+    "HDFCBANK.NS": "HDFC Bank",
+    "ICICIBANK.NS": "ICICI Bank",
+    "SBIN.NS": "State Bank of India",
+    "AXISBANK.NS": "Axis Bank",
+    "KOTAKBANK.NS": "Kotak Mahindra Bank",
+    "INDUSINDBK.NS": "IndusInd Bank",
+
+    "ITC.NS": "ITC",
+    "HINDUNILVR.NS": "Hindustan Unilever",
+    "NESTLEIND.NS": "Nestle India",
+    "BRITANNIA.NS": "Britannia Industries",
+    "TATACONSUM.NS": "Tata Consumer Products",
+
+    "LT.NS": "Larsen & Toubro",
+    "ULTRACEMCO.NS": "UltraTech Cement",
+    "GRASIM.NS": "Grasim Industries",
+
+    "ADANIENT.NS": "Adani Enterprises",
+    "ADANIPORTS.NS": "Adani Ports",
+    "ADANIGREEN.NS": "Adani Green Energy",
+
+    "TATAMOTORS.NS": "Tata Motors",
+    "MARUTI.NS": "Maruti Suzuki",
+    "M&M.NS": "Mahindra & Mahindra",
+    "BAJAJ-AUTO.NS": "Bajaj Auto",
+    "HEROMOTOCO.NS": "Hero MotoCorp",
+
+    "BHARTIARTL.NS": "Bharti Airtel",
+    "IDEA.NS": "Vodafone Idea",
+
+    "POWERGRID.NS": "Power Grid Corporation",
+    "NTPC.NS": "NTPC",
+    "ONGC.NS": "ONGC",
+    "COALINDIA.NS": "Coal India",
+
+    "SUNPHARMA.NS": "Sun Pharma",
+    "DRREDDY.NS": "Dr Reddy's Laboratories",
+    "CIPLA.NS": "Cipla",
+    "DIVISLAB.NS": "Divi's Laboratories",
+
+    "HCLTECH.NS": "HCL Technologies",
+    "TECHM.NS": "Tech Mahindra",
+    "LTIM.NS": "LTIMindtree",
+
+    "ASIANPAINT.NS": "Asian Paints",
+    "TITAN.NS": "Titan Company",
+    "UPL.NS": "UPL"
 }
 
 ticker = st.selectbox("Select Stock", list(STOCKS.keys()))
